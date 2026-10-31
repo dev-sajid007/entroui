@@ -4,7 +4,7 @@ from conan.tools.cmake import CMakeDeps, CMakeToolchain, cmake_layout
 
 class EntroUIConan(ConanFile):
     name = "entroui"
-    version = "1.0.0"
+    version = "1.1.0"
     license = "MIT"
     author = "EntroUI Contributors"
     description = "A lightweight C++20 declarative desktop UI framework"

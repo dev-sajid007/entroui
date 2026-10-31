@@ -115,6 +115,10 @@ button("Save")
     .on(EventType::Click, [](Event&) {});
 ```
 
+Text inputs additionally support mouse caret placement, shift-selection,
+`Ctrl+A`, `Ctrl+C`, `Ctrl+X` and `Ctrl+V`. The application wires clipboard
+access to the platform through `EventDispatcher::setClipboard`.
+
 Events bubble from the target through its ancestors. Call
 `event.stopPropagation()` to stop bubbling and `event.preventDefault()` to skip
 default actions. `MouseEvent` carries `x`, `y`, `button` and `clicks`;
@@ -138,6 +142,23 @@ p().bindText(name);
 State changes mark the document dirty and update bound text immediately. Bindings
 are cancelled automatically when their element is destroyed. State is not
 thread-safe; mutate it on the UI thread.
+
+### Text input editing
+
+Focused text inputs support caret placement by clicking, click-drag and
+shift-arrow selection, `Home`/`End`, `Backspace`/`Delete`, and the clipboard
+shortcuts `Ctrl+A`, `Ctrl+C`, `Ctrl+X` and `Ctrl+V`. The application supplies
+clipboard access through the event dispatcher:
+
+```cpp
+EventDispatcher dispatcher(document, layout, &measurer);
+dispatcher.setClipboard(
+    [] { return readClipboard(); },
+    [](std::string text) { writeClipboard(text); });
+```
+
+Selection state is available on the element (`hasSelection`,
+`selectedText`, `selectionStart`, `selectionEnd`).
 
 ## Components
 

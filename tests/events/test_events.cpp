@@ -18,12 +18,13 @@ public:
         computeDocumentStyles(document_, defaultThemeStylesheet().get(),
                               document_.stylesheet());
         layout_.layout(document_, 500.0F, 400.0F, measurer_);
-        dispatcher_ = std::make_unique<EventDispatcher>(document_, layout_);
+        dispatcher_ = std::make_unique<EventDispatcher>(document_, layout_, &measurer_);
     }
 
     [[nodiscard]] Document& document() { return document_; }
     [[nodiscard]] LayoutTree& layout() { return layout_; }
     [[nodiscard]] EventDispatcher& dispatcher() { return *dispatcher_; }
+    [[nodiscard]] FixedTextMeasurer& measurer() { return measurer_; }
 
     [[nodiscard]] Rect box(std::string_view id) const {
         const Element* element = document_.findById(id);
@@ -213,4 +214,85 @@ TEST(Events, HoverClassesDriveThemeStyling) {
     harness.dispatcher().handleMouseMove(box.x + 2.0F, box.y + 2.0F);
     ASSERT_NE(harness.dispatcher().hovered(), nullptr);
     EXPECT_TRUE(harness.dispatcher().hovered()->hasClass("hover"));
+}
+
+TEST(Events, ClickPlacesCaretAtMeasuredPosition) {
+    auto root = div();
+    auto field = input("Type").id("input");
+    field.setValue("hello");
+    root.child(std::move(field));
+    Harness harness(std::move(root));
+
+    Element* element = harness.document().findById("input");
+    ASSERT_NE(element, nullptr);
+    const LayoutBox* box = harness.layout().find(element);
+    ASSERT_NE(box, nullptr);
+    const float clickX = box->contentBox.x + 16.0F;
+    harness.dispatcher().handleMouseDown(clickX, box->contentBox.y + 5.0F, 1);
+    harness.dispatcher().handleMouseUp(clickX, box->contentBox.y + 5.0F, 1);
+    EXPECT_EQ(element->caret(), 2);
+}
+
+TEST(Events, ClipboardCopyPasteAndCut) {
+    auto root = div();
+    root.child(input("Type").id("input"));
+    Harness harness(std::move(root));
+    Element* element = harness.document().findById("input");
+    ASSERT_NE(element, nullptr);
+    element->setValue("hello");
+    harness.dispatcher().setFocus(element);
+
+    std::string clipboard;
+    harness.dispatcher().setClipboard([&] { return clipboard; },
+                                      [&](std::string value) { clipboard = std::move(value); });
+
+    harness.dispatcher().handleKeyDown('a', 0, Mods::Ctrl);
+    EXPECT_EQ(element->selectedText(), "hello");
+    harness.dispatcher().handleKeyDown('c', 0, Mods::Ctrl);
+    EXPECT_EQ(clipboard, "hello");
+
+    clipboard = "world";
+    harness.dispatcher().handleKeyDown('v', 0, Mods::Ctrl);
+    EXPECT_EQ(element->value(), "world");
+    EXPECT_EQ(element->caret(), 5);
+
+    harness.dispatcher().handleKeyDown('a', 0, Mods::Ctrl);
+    harness.dispatcher().handleKeyDown('x', 0, Mods::Ctrl);
+    EXPECT_EQ(element->value(), "");
+    EXPECT_EQ(clipboard, "world");
+}
+
+TEST(Events, ShiftSelectionAndBackspace) {
+    auto root = div();
+    root.child(input("Type").id("input"));
+    Harness harness(std::move(root));
+    Element* element = harness.document().findById("input");
+    ASSERT_NE(element, nullptr);
+    element->setValue("abc");
+    harness.dispatcher().setFocus(element);
+
+    harness.dispatcher().handleKeyDown(Keys::Left, 0, Mods::Shift);
+    harness.dispatcher().handleKeyDown(Keys::Left, 0, Mods::Shift);
+    EXPECT_EQ(element->selectedText(), "bc");
+    harness.dispatcher().handleKeyDown(Keys::Backspace, 0, 0);
+    EXPECT_EQ(element->value(), "a");
+    EXPECT_FALSE(element->hasSelection());
+}
+
+TEST(Events, PasteReplacesSelection) {
+    auto root = div();
+    root.child(input("Type").id("input"));
+    Harness harness(std::move(root));
+    Element* element = harness.document().findById("input");
+    ASSERT_NE(element, nullptr);
+    element->setValue("abcdef");
+    harness.dispatcher().setFocus(element);
+    harness.dispatcher().setClipboard([] { return std::string("XY"); }, [](std::string) {});
+
+    harness.dispatcher().handleKeyDown(Keys::Home, 0, 0);
+    harness.dispatcher().handleKeyDown(Keys::Right, 0, Mods::Shift);
+    harness.dispatcher().handleKeyDown(Keys::Right, 0, Mods::Shift);
+    EXPECT_EQ(element->selectedText(), "ab");
+    harness.dispatcher().handleKeyDown('v', 0, Mods::Ctrl);
+    EXPECT_EQ(element->value(), "XYcdef");
 }

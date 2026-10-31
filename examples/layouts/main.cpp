@@ -9,7 +9,7 @@ namespace {
 Element panel(std::string title, std::string body, std::string accent) {
     return div()
         .className("panel")
-        .style("width", "31%")
+        .style("flex", "1")
         .style("background", "#ffffff")
         .style("border", "1px solid #e2e8f0")
         .style("border-radius", "12px")
@@ -32,6 +32,9 @@ int main() {
     auto side = div()
                     .className("sidebar")
                     .style("width", "220px")
+                    .style("display", "flex")
+                    .style("flex-direction", "column")
+                    .style("gap", "8px")
                     .style("background", "#ffffff")
                     .style("border-radius", "12px")
                     .style("padding", "18px")

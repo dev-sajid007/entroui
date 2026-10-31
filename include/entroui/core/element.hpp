@@ -133,6 +133,17 @@ public:
     void setValue(std::string value);
     [[nodiscard]] int caret() const noexcept { return caret_; }
     void setCaret(int caret) noexcept { caret_ = caret; }
+    [[nodiscard]] int selectionStart() const noexcept { return selectionStart_; }
+    [[nodiscard]] int selectionEnd() const noexcept { return selectionEnd_; }
+    [[nodiscard]] bool hasSelection() const noexcept {
+        return selectionStart_ != selectionEnd_;
+    }
+    void setSelection(int start, int end) noexcept;
+    void clearSelection() noexcept {
+        selectionStart_ = 0;
+        selectionEnd_ = 0;
+    }
+    [[nodiscard]] std::string selectedText() const;
     [[nodiscard]] bool checked() const noexcept { return checked_; }
     void setChecked(bool checked);
     [[nodiscard]] bool focusable() const noexcept { return focusable_; }
@@ -191,6 +202,8 @@ private:
 
     std::string value_;
     int caret_ = 0;
+    int selectionStart_ = 0;
+    int selectionEnd_ = 0;
     bool checked_ = false;
     bool focusable_ = false;
     bool focused_ = false;

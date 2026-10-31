@@ -196,7 +196,7 @@ TEST(Builder, NormalizesWhitespaceAndEntities) {
     ASSERT_TRUE(parsed.ok());
     auto built = buildDocument(*parsed.value);
     ASSERT_TRUE(built.ok());
-    EXPECT_EQ(built.document->root().textContent(), "Hellothere<3");
+    EXPECT_EQ(built.document->root().textContent(), " Hello there <3 ");
 }
 
 TEST(Parser, ReportsUnterminatedStringCommentAndTag) {

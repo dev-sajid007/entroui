@@ -39,10 +39,12 @@ int main() {
 - C++20 declarative DSL and `.eui` markup producing one UI tree.
 - DOM-like element tree with IDs, classes, attributes, traversal and lookup.
 - CSS-inspired stylesheet engine with element, class, ID and compound selectors.
-- Block and flexbox-inspired layout with padding, margin, borders, gap,
-  alignment, justification, percentages and min/max constraints.
+- Block, inline and flexbox-inspired layout with padding, margin, borders, gap,
+  alignment, justification, percentages, flex grow/shrink/wrap and min/max
+  constraints.
 - Text measuring and wrapping, font size/weight, line height and text alignment.
-- Mouse, keyboard, focus, hover and text input events with bubbling.
+- Mouse, keyboard, focus, hover and text input events with bubbling, caret
+  placement, selection and clipboard shortcuts.
 - Reactive `State<T>` bindings and a component lifecycle.
 - SDL3 windowing, software rendering and SDL_ttf text.
 - Built-in widgets: button, label, text input, checkbox, image, container and
@@ -121,9 +123,8 @@ The CLI is built as the `entroui` binary (CMake target `entroui-cli`):
 
 ## Status
 
-Version 1.0.0 implements the roadmap through the production foundation
-milestones: core tree, parser, SDL platform, rendering, text, styling, layout,
-events, components, reactive state, widgets, resources, tooling and tests.
+Version 1.1.0 adds inline formatting, flex grow/shrink/wrap and text selection
+on top of the 1.0.0 production foundation.
 
 ## License
 

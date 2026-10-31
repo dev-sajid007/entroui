@@ -167,3 +167,21 @@ TEST(Integration, AppRejectsInvalidStylesheet) {
     App app;
     EXPECT_THROW(app.stylesheetText(".x { width: 10px;", "<bad>"), std::runtime_error);
 }
+
+TEST(Integration, TextSelectionEmitsHighlight) {
+    auto root = div();
+    auto field = Widgets::textInput("Type", "hello");
+    field.id("input");
+    field.setSelection(1, 3);
+    field.setFocused(true);
+    root.child(std::move(field));
+    Document document;
+    document.setRoot(std::make_unique<Element>(std::move(root)));
+    document.setViewport(400.0F, 200.0F);
+    computeDocumentStyles(document, defaultThemeStylesheet().get(), nullptr);
+    LayoutTree layout;
+    FixedTextMeasurer measurer;
+    layout.layout(document, 400.0F, 200.0F, measurer);
+    const auto commands = buildRenderCommands(layout);
+    EXPECT_TRUE(hasRectColor(commands, Color(191, 219, 254, 255)));
+}

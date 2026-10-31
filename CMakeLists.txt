@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(EntroUI VERSION 1.0.0 LANGUAGES C CXX)
+project(EntroUI VERSION 1.1.0 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 include(FetchContent)

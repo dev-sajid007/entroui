@@ -105,6 +105,23 @@ int translateKey(SDL_Keycode key) {
     return code > 0 && code < 128 ? code : 0;
 }
 
+int translateMods(SDL_Keymod mods) {
+    int result = 0;
+    if ((mods & SDL_KMOD_SHIFT) != 0) {
+        result |= Mods::Shift;
+    }
+    if ((mods & SDL_KMOD_CTRL) != 0) {
+        result |= Mods::Ctrl;
+    }
+    if ((mods & SDL_KMOD_ALT) != 0) {
+        result |= Mods::Alt;
+    }
+    if ((mods & SDL_KMOD_GUI) != 0) {
+        result |= Mods::Super;
+    }
+    return result;
+}
+
 std::string boldVariant(const std::string& path) {
     if (path.empty()) {
         return {};
@@ -200,7 +217,18 @@ int App::Impl::run() {
         ResourceManager resources(resourceDirectory);
         detail::SDLRenderer renderer(platform.renderer(), fonts, resources);
         LayoutTree layout;
-        EventDispatcher dispatcher(*document, layout);
+        EventDispatcher dispatcher(*document, layout, &measurer);
+        dispatcher.setClipboard(
+            [] {
+                char* text = SDL_GetClipboardText();
+                if (text == nullptr) {
+                    return std::string();
+                }
+                std::string result(text);
+                SDL_free(text);
+                return result;
+            },
+            [](std::string text) { SDL_SetClipboardText(text.c_str()); });
         const auto theme = defaultThemeStylesheet();
 
         auto lastFrame = std::chrono::steady_clock::now();
@@ -245,12 +273,12 @@ int App::Impl::run() {
                 case SDL_EVENT_KEY_DOWN:
                     dispatcher.handleKeyDown(
                         translateKey(event.key.key), static_cast<int>(event.key.scancode),
-                        (event.key.mod & SDL_KMOD_SHIFT) != 0 ? 1 : 0, event.key.repeat);
+                        translateMods(event.key.mod), event.key.repeat);
                     break;
                 case SDL_EVENT_KEY_UP:
                     dispatcher.handleKeyUp(
                         translateKey(event.key.key), static_cast<int>(event.key.scancode),
-                        (event.key.mod & SDL_KMOD_SHIFT) != 0 ? 1 : 0);
+                        translateMods(event.key.mod));
                     break;
                 case SDL_EVENT_TEXT_INPUT:
                     dispatcher.handleTextInput(event.text.text);

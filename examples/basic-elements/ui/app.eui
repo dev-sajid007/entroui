@@ -21,8 +21,8 @@
 
             <div class="card">
                 <h2>Lists and text</h2>
-                <p>EntroUI parses nested markup, comments and attributes.</p>
-                <p class="accent">Spans support class-based styling.</p>
+                <p>EntroUI parses <span class="accent">nested markup</span>, comments and
+                    attributes.</p>
                 <list>
                     <p>Declarative C++ DSL</p>
                     <p>HTML-like .eui markup</p>

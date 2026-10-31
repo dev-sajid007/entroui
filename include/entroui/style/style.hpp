@@ -80,10 +80,13 @@ struct EdgeLengths {
     }
 };
 
-enum class Display { Block, InlineBlock, Flex, None };
+enum class Display { Block, Inline, InlineBlock, Flex, None };
 enum class FlexDirection { Row, Column };
 enum class JustifyContent { Start, Center, End, SpaceBetween, SpaceAround };
 enum class AlignItems { Start, Center, End, Stretch };
+enum class AlignSelf { Auto, Start, Center, End, Stretch };
+enum class AlignContent { Start, Center, End, SpaceBetween, SpaceAround, Stretch };
+enum class FlexWrap { NoWrap, Wrap };
 enum class TextAlign { Left, Center, Right };
 
 struct FontSpec {
@@ -122,7 +125,22 @@ struct StyleProperties {
     FlexDirection flexDirection = FlexDirection::Row;
     JustifyContent justifyContent = JustifyContent::Start;
     AlignItems alignItems = AlignItems::Stretch;
+    AlignSelf alignSelf = AlignSelf::Auto;
+    AlignContent alignContent = AlignContent::Stretch;
+    FlexWrap flexWrap = FlexWrap::NoWrap;
     float gap = 0.0F;
+    float rowGap = -1.0F;
+    float columnGap = -1.0F;
+    Length flexBasis;
+    float flexGrow = 0.0F;
+    float flexShrink = 1.0F;
+
+    [[nodiscard]] float resolvedRowGap() const noexcept {
+        return rowGap >= 0.0F ? rowGap : gap;
+    }
+    [[nodiscard]] float resolvedColumnGap() const noexcept {
+        return columnGap >= 0.0F ? columnGap : gap;
+    }
 
     [[nodiscard]] float resolvedLineHeight() const noexcept {
         return lineHeight > 0.0F ? lineHeight : fontSize * 1.2F;

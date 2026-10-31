@@ -93,19 +93,26 @@ decimal `0..1`.
 
 | Property | Values |
 |---|---|
-| `display` | `block`, `inline-block`, `flex`, `none` |
+| `display` | `block`, `inline`, `inline-block`, `flex`, `none` |
 | `flex-direction` | `row`, `column` |
+| `flex-wrap` | `nowrap`, `wrap` (row wrapping) |
 | `justify-content` | `start`, `center`, `end`, `space-between`, `space-around` |
 | `align-items` | `start`, `center`, `end`, `stretch` |
-| `gap` | length |
+| `align-self` | `auto`, `start`, `center`, `end`, `stretch` |
+| `align-content` | `start`, `center`, `end`, `space-between`, `space-around`, `stretch` |
+| `gap`, `row-gap`, `column-gap` | length |
+| `flex`, `flex-grow`, `flex-shrink`, `flex-basis` | number / length |
 
-Flexbox is limited to single-line row/column layouts. Flex grow/shrink and
-wrapping are not implemented in 1.0.0.
+Block containers lay out text runs, `span`s and inline-block elements on shared
+wrapped lines. Flex containers support grow, shrink, basis, wrapping (row), gap
+and per-item alignment. Column wrapping is not implemented; use row wrap or
+nested flex containers instead.
 
 ## Defaults
 
 - `div`, `h1`, `h2`, `p`, `list`: `display: block`.
-- `span`, `button`, `input`, `label`, `image`: `display: inline-block`.
+- `span`: `display: inline`.
+- `button`, `input`, `label`, `image`: `display: inline-block`.
 - `h1`: 32px bold.
 - `h2`: 24px bold.
 - Body text: 16px, dark gray.

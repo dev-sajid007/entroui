@@ -1,5 +1,5 @@
 PROJECT_NAME           = EntroUI
-PROJECT_NUMBER         = 1.0.0
+PROJECT_NUMBER         = 1.1.0
 PROJECT_BRIEF          = C++20 declarative desktop UI framework
 OUTPUT_DIRECTORY       = build/docs
 INPUT                  = include/entroui README.md docs

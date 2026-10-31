@@ -45,6 +45,23 @@ bool isVisible(const Element& element) {
     return !element.hasComputedStyle() || element.computedStyle().display != Display::None;
 }
 
+AlignSelf effectiveAlign(AlignSelf self, AlignItems items) {
+    if (self != AlignSelf::Auto) {
+        return self;
+    }
+    switch (items) {
+    case AlignItems::Start:
+        return AlignSelf::Start;
+    case AlignItems::Center:
+        return AlignSelf::Center;
+    case AlignItems::End:
+        return AlignSelf::End;
+    case AlignItems::Stretch:
+        return AlignSelf::Stretch;
+    }
+    return AlignSelf::Start;
+}
+
 class LayoutBuilder {
 public:
     LayoutBuilder(TextMeasurer& textMeasurer, ImageSizeProvider* imageProvider)
@@ -368,23 +385,178 @@ private:
     float layoutBlock(Element& element, LayoutBox* box, const StyleProperties& style,
                       float contentWidth, float availableHeight) {
         float cursorY = 0.0F;
-        float maxBottom = 0.0F;
         const float originX = box->border.left + box->padding.left;
         const float originY = box->border.top + box->padding.top;
+        const FontSpec font = fontFor(style);
+        const float spaceWidth = textWidth(" ", font);
+        const float baseLineHeight = style.resolvedLineHeight();
+
+        struct InlineEntry {
+            enum class Kind { Word, Space, Element };
+
+            Kind kind = Kind::Word;
+            const TextNode* textNode = nullptr;
+            std::string word;
+            float width = 0.0F;
+            std::unique_ptr<LayoutBox> elementBox;
+        };
+
+        std::vector<InlineEntry> line;
+        float lineCursor = 0.0F;
+
+        auto flushLine = [&]() {
+            if (line.empty()) {
+                lineCursor = 0.0F;
+                return;
+            }
+            while (!line.empty() && line.back().kind == InlineEntry::Kind::Space) {
+                line.pop_back();
+            }
+            if (line.empty()) {
+                lineCursor = 0.0F;
+                return;
+            }
+
+            float totalWidth = 0.0F;
+            float lineHeight = baseLineHeight;
+            for (const auto& entry : line) {
+                if (entry.kind == InlineEntry::Kind::Space) {
+                    totalWidth += spaceWidth;
+                } else if (entry.kind == InlineEntry::Kind::Word) {
+                    totalWidth += entry.width;
+                } else if (entry.elementBox != nullptr) {
+                    totalWidth += entry.elementBox->margin.horizontal() +
+                                  entry.elementBox->borderBox.width;
+                    lineHeight = std::max(lineHeight,
+                                          entry.elementBox->borderBox.height +
+                                              entry.elementBox->margin.vertical());
+                }
+            }
+
+            float alignOffset = 0.0F;
+            if (style.textAlign == TextAlign::Center) {
+                alignOffset = std::max(0.0F, (contentWidth - totalWidth) * 0.5F);
+            } else if (style.textAlign == TextAlign::Right) {
+                alignOffset = std::max(0.0F, contentWidth - totalWidth);
+            }
+
+            float x = alignOffset;
+            bool textActive = false;
+            float textStart = 0.0F;
+            float textWidthValue = 0.0F;
+            std::string text;
+            const TextNode* textOwner = nullptr;
+
+            auto flushTextSegment = [&]() {
+                if (!textActive || textOwner == nullptr) {
+                    textActive = false;
+                    text.clear();
+                    textWidthValue = 0.0F;
+                    return;
+                }
+                auto segment = std::make_unique<LayoutBox>();
+                segment->node = textOwner;
+                segment->textNode = textOwner;
+                segment->isText = true;
+                segment->font = font;
+                segment->textColor = style.color;
+                segment->textAlign = style.textAlign;
+                segment->lineHeight = baseLineHeight;
+                segment->lines.push_back(text);
+                segment->borderBox = {originX + textStart,
+                                      originY + cursorY + (lineHeight - baseLineHeight) * 0.5F,
+                                      textWidthValue, baseLineHeight};
+                segment->paddingBox = segment->borderBox;
+                segment->contentBox = segment->borderBox;
+                segment->parent = box;
+                box->children.push_back(std::move(segment));
+                textActive = false;
+                text.clear();
+                textWidthValue = 0.0F;
+            };
+
+            for (auto& entry : line) {
+                if (entry.kind == InlineEntry::Kind::Space) {
+                    if (textActive) {
+                        text.push_back(' ');
+                        textWidthValue += spaceWidth;
+                    }
+                    x += spaceWidth;
+                    continue;
+                }
+                if (entry.kind == InlineEntry::Kind::Word) {
+                    if (!textActive || textOwner != entry.textNode) {
+                        flushTextSegment();
+                        textActive = true;
+                        textOwner = entry.textNode;
+                        textStart = x;
+                    }
+                    text += entry.word;
+                    textWidthValue += entry.width;
+                    x += entry.width;
+                    continue;
+                }
+
+                flushTextSegment();
+                auto& childBox = entry.elementBox;
+                if (childBox == nullptr) {
+                    continue;
+                }
+                childBox->parent = box;
+                const float childX = originX + x + childBox->margin.left;
+                const float childY = originY + cursorY +
+                                     (lineHeight - childBox->borderBox.height) * 0.5F;
+                childBox->borderBox.translate(childX, childY);
+                childBox->paddingBox.translate(childX, childY);
+                childBox->contentBox.translate(childX, childY);
+                translateChildren(childBox.get(), childX, childY);
+                x += childBox->margin.horizontal() + childBox->borderBox.width;
+                box->children.push_back(std::move(childBox));
+            }
+            flushTextSegment();
+
+            cursorY += lineHeight;
+            line.clear();
+            lineCursor = 0.0F;
+        };
 
         for (auto& child : element.children()) {
             if (child->isText()) {
                 const auto& textNode = static_cast<const TextNode&>(*child);
-                auto textBox = layoutText(textNode, style, contentWidth, true);
-                textBox->parent = box;
-                const float x = 0.0F;
-                const float y = cursorY;
-                textBox->borderBox.translate(originX + x, originY + y);
-                textBox->paddingBox = textBox->borderBox;
-                textBox->contentBox = textBox->borderBox;
-                cursorY += textBox->borderBox.height;
-                maxBottom = std::max(maxBottom, cursorY);
-                box->children.push_back(std::move(textBox));
+                const std::string& textValue = textNode.text();
+                if (textValue.empty()) {
+                    continue;
+                }
+                std::size_t position = 0;
+                while (position < textValue.size()) {
+                    if (textValue[position] == ' ') {
+                        if (!line.empty()) {
+                            line.push_back(InlineEntry{InlineEntry::Kind::Space});
+                            lineCursor += spaceWidth;
+                        }
+                        ++position;
+                        continue;
+                    }
+                    std::size_t end = textValue.find(' ', position);
+                    if (end == std::string::npos) {
+                        end = textValue.size();
+                    }
+                    const std::string word = textValue.substr(position, end - position);
+                    const float width = textWidth(word, font);
+                    constexpr float kTextFitTolerance = 2.0F;
+                    if (lineCursor + width > contentWidth + kTextFitTolerance &&
+                        lineCursor > 0.0F) {
+                        flushLine();
+                    }
+                    InlineEntry entry;
+                    entry.kind = InlineEntry::Kind::Word;
+                    entry.textNode = &textNode;
+                    entry.word = word;
+                    entry.width = width;
+                    line.push_back(std::move(entry));
+                    lineCursor += width;
+                    position = end;
+                }
                 continue;
             }
             if (!child->isElement()) {
@@ -395,8 +567,28 @@ private:
                 continue;
             }
             const auto& childStyle = childElement.computedStyle();
-            const bool fill = childStyle.width.isAuto() &&
-                              childStyle.display != Display::InlineBlock;
+            const bool inlineElement = childStyle.display == Display::Inline ||
+                                       childStyle.display == Display::InlineBlock;
+            if (inlineElement) {
+                auto childBox = layoutElement(childElement, contentWidth, availableHeight, false,
+                                              -1.0F, -1.0F);
+                const float outerWidth =
+                    childBox->margin.horizontal() + childBox->borderBox.width;
+                if (lineCursor + outerWidth > contentWidth && lineCursor > 0.0F) {
+                    flushLine();
+                }
+                InlineEntry entry;
+                entry.kind = InlineEntry::Kind::Element;
+                entry.elementBox = std::move(childBox);
+                const float width = entry.elementBox->margin.horizontal() +
+                                    entry.elementBox->borderBox.width;
+                line.push_back(std::move(entry));
+                lineCursor += width;
+                continue;
+            }
+
+            flushLine();
+            const bool fill = childStyle.width.isAuto();
             auto childBox = layoutElement(childElement, contentWidth, availableHeight, fill, -1.0F,
                                           -1.0F);
             childBox->parent = box;
@@ -410,6 +602,7 @@ private:
                        childBox->margin.bottom;
             box->children.push_back(std::move(childBox));
         }
+        flushLine();
 
         return std::max(0.0F, cursorY);
     }
@@ -427,6 +620,9 @@ private:
             float marginCrossEnd = 0.0F;
             bool autoMain = false;
             bool autoCross = false;
+            const Element* element = nullptr;
+            float grow = 0.0F;
+            float shrink = 0.0F;
         };
 
         std::vector<ChildLayout> children;
@@ -459,14 +655,23 @@ private:
             const EdgeInsets childMargin = childStyle.margin.resolve(contentWidth);
 
             float forcedWidth = -1.0F;
-            if (!childStyle.width.isAuto()) {
+            if (!childStyle.flexBasis.isAuto() && row) {
+                forcedWidth = childStyle.flexBasis.resolve(contentWidth);
+            } else if (!childStyle.width.isAuto()) {
                 forcedWidth = childStyle.width.resolve(contentWidth);
-            } else if (!row && style.alignItems == AlignItems::Stretch) {
-                forcedWidth = std::max(0.0F, contentWidth - childMargin.horizontal());
+            } else if (!row) {
+                const AlignSelf align =
+                    effectiveAlign(childStyle.alignSelf, style.alignItems);
+                if (align == AlignSelf::Stretch) {
+                    forcedWidth =
+                        std::max(0.0F, contentWidth - childMargin.horizontal());
+                }
             }
 
             float forcedHeight = -1.0F;
-            if (!childStyle.height.isAuto()) {
+            if (!childStyle.flexBasis.isAuto() && !row) {
+                forcedHeight = childStyle.flexBasis.resolve(availableHeight);
+            } else if (!childStyle.height.isAuto()) {
                 forcedHeight = childStyle.height.unit == LengthUnit::Percent
                                    ? childStyle.height.resolve(availableHeight, -1.0F)
                                    : childStyle.height.value;
@@ -491,12 +696,305 @@ private:
                                   ? true
                                   : (childStyle.height.isAuto() && !row);
             layout.autoCross = row ? childStyle.height.isAuto() : childStyle.width.isAuto();
+            layout.element = &childElement;
+            layout.grow = childStyle.flexGrow;
+            layout.shrink = childStyle.flexShrink;
             box->children.push_back(std::move(childBox));
             children.push_back(layout);
         }
 
         const float mainAvailable = row ? contentWidth : contentHeightForFlex(fixedHeight, box);
-        const float mainGap = style.gap;
+        const float mainGap = row ? style.resolvedColumnGap() : style.resolvedRowGap();
+        const float crossGap = row ? style.resolvedRowGap() : style.resolvedColumnGap();
+
+        auto relayoutMain = [&](ChildLayout& child, float newMain) {
+            if (child.element == nullptr) {
+                return;
+            }
+            auto& childElement = const_cast<Element&>(*child.element);
+            const auto& childStyle = childElement.computedStyle();
+            const EdgeInsets childMargin = childStyle.margin.resolve(contentWidth);
+            float forcedWidth = -1.0F;
+            float forcedHeight = -1.0F;
+            if (row) {
+                forcedWidth = std::max(0.0F, newMain);
+                if (!childStyle.height.isAuto()) {
+                    forcedHeight = childStyle.height.unit == LengthUnit::Percent
+                                       ? childStyle.height.resolve(availableHeight, -1.0F)
+                                       : childStyle.height.value;
+                }
+            } else {
+                forcedHeight = std::max(0.0F, newMain);
+                if (!childStyle.width.isAuto()) {
+                    forcedWidth = childStyle.width.resolve(contentWidth);
+                } else {
+                    const AlignSelf align =
+                        effectiveAlign(childStyle.alignSelf, style.alignItems);
+                    if (align == AlignSelf::Stretch) {
+                        forcedWidth =
+                            std::max(0.0F, contentWidth - childMargin.horizontal());
+                    }
+                }
+            }
+            auto replacement = layoutElement(childElement, contentWidth, availableHeight, false,
+                                             forcedWidth, forcedHeight);
+            replacement->parent = box;
+            const Node* node = child.box->node;
+            child.mainSize =
+                row ? replacement->borderBox.width : replacement->borderBox.height;
+            child.crossSize =
+                row ? replacement->borderBox.height : replacement->borderBox.width;
+            for (auto& stored : box->children) {
+                if (stored != nullptr && stored->node == node) {
+                    stored = std::move(replacement);
+                    child.box = stored.get();
+                    break;
+                }
+            }
+        };
+
+        auto relayoutCrossRow = [&](ChildLayout& child, float targetCross) {
+            if (child.element == nullptr || !child.autoCross) {
+                return;
+            }
+            auto& childElement = const_cast<Element&>(*child.element);
+            const float target = std::max(
+                0.0F, targetCross - child.marginCrossStart - child.marginCrossEnd);
+            auto replacement = layoutElement(childElement, contentWidth, availableHeight, false,
+                                             child.mainSize, target);
+            replacement->parent = box;
+            const float replacementMain =
+                row ? replacement->borderBox.width : replacement->borderBox.height;
+            const Node* node = child.box->node;
+            child.mainSize = replacementMain;
+            child.crossSize =
+                row ? replacement->borderBox.height : replacement->borderBox.width;
+            for (auto& stored : box->children) {
+                if (stored != nullptr && stored->node == node) {
+                    stored = std::move(replacement);
+                    child.box = stored.get();
+                    break;
+                }
+            }
+        };
+
+        if (style.flexWrap == FlexWrap::Wrap && row && !children.empty()) {
+            std::vector<std::vector<std::size_t>> lines;
+            std::vector<std::size_t> currentLine;
+            float currentLineWidth = 0.0F;
+            for (std::size_t index = 0; index < children.size(); ++index) {
+                const auto& child = children[index];
+                const float outer =
+                    child.marginMainStart + child.mainSize + child.marginMainEnd;
+                const float increment = currentLine.empty()
+                                            ? outer
+                                            : mainGap + outer;
+                if (mainAvailable > 0.0F && !currentLine.empty() &&
+                    currentLineWidth + increment > mainAvailable + 0.01F) {
+                    lines.push_back(std::move(currentLine));
+                    currentLine.clear();
+                    currentLineWidth = 0.0F;
+                }
+                currentLineWidth += currentLine.empty() ? outer : mainGap + outer;
+                currentLine.push_back(index);
+            }
+            if (!currentLine.empty()) {
+                lines.push_back(std::move(currentLine));
+            }
+
+            std::vector<float> lineCrossSizes(lines.size(), 0.0F);
+            for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
+                auto& indices = lines[lineIndex];
+                float used = 0.0F;
+                for (const std::size_t index : indices) {
+                    used += children[index].marginMainStart + children[index].mainSize +
+                            children[index].marginMainEnd;
+                }
+                if (indices.size() > 1) {
+                    used += mainGap * static_cast<float>(indices.size() - 1);
+                }
+
+                if (mainAvailable > 0.0F) {
+                    float totalGrow = 0.0F;
+                    float totalShrinkWeight = 0.0F;
+                    for (const std::size_t index : indices) {
+                        totalGrow += children[index].grow;
+                        totalShrinkWeight +=
+                            children[index].shrink * children[index].mainSize;
+                    }
+                    const float freeMain = mainAvailable - used;
+                    if (freeMain > 0.0F && totalGrow > 0.0F) {
+                        for (const std::size_t index : indices) {
+                            auto& child = children[index];
+                            if (child.grow > 0.0F) {
+                                relayoutMain(
+                                    child,
+                                    child.mainSize + freeMain * (child.grow / totalGrow));
+                            }
+                        }
+                    } else if (freeMain < 0.0F && totalShrinkWeight > 0.0F) {
+                        for (const std::size_t index : indices) {
+                            auto& child = children[index];
+                            if (child.shrink > 0.0F && child.mainSize > 0.0F) {
+                                const float scaled = child.shrink * child.mainSize;
+                                relayoutMain(
+                                    child,
+                                    child.mainSize +
+                                        freeMain * (scaled / totalShrinkWeight));
+                            }
+                        }
+                    }
+                }
+
+                for (const std::size_t index : indices) {
+                    lineCrossSizes[lineIndex] =
+                        std::max(lineCrossSizes[lineIndex],
+                                 children[index].marginCrossStart +
+                                     children[index].crossSize +
+                                     children[index].marginCrossEnd);
+                }
+            }
+
+            float totalCross = 0.0F;
+            for (const float size : lineCrossSizes) {
+                totalCross += size;
+            }
+            if (lines.size() > 1) {
+                totalCross += crossGap * static_cast<float>(lines.size() - 1);
+            }
+
+            const float contentCrossAvailable =
+                fixedHeight >= 0.0F
+                    ? std::max(0.0F, fixedHeight - box->padding.vertical() -
+                                         box->border.vertical())
+                    : totalCross;
+            float freeCross = std::max(0.0F, contentCrossAvailable - totalCross);
+            float crossOffset = 0.0F;
+            float extraCrossGap = 0.0F;
+            if (fixedHeight >= 0.0F && style.alignContent != AlignContent::Stretch) {
+                switch (style.alignContent) {
+                case AlignContent::Start:
+                    break;
+                case AlignContent::Center:
+                    crossOffset = freeCross * 0.5F;
+                    break;
+                case AlignContent::End:
+                    crossOffset = freeCross;
+                    break;
+                case AlignContent::SpaceBetween:
+                    if (lines.size() > 1) {
+                        extraCrossGap =
+                            freeCross / static_cast<float>(lines.size() - 1);
+                    }
+                    break;
+                case AlignContent::SpaceAround:
+                    if (!lines.empty()) {
+                        const float slice =
+                            freeCross / static_cast<float>(lines.size());
+                        crossOffset = slice * 0.5F;
+                        extraCrossGap = slice;
+                    }
+                    break;
+                case AlignContent::Stretch:
+                    break;
+                }
+                freeCross = 0.0F;
+            }
+            if (fixedHeight >= 0.0F && style.alignContent == AlignContent::Stretch &&
+                !lines.empty()) {
+                const float extra = freeCross / static_cast<float>(lines.size());
+                for (float& size : lineCrossSizes) {
+                    size += extra;
+                }
+                freeCross = 0.0F;
+            }
+
+            float lineTop = crossOffset;
+            for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
+                const auto& indices = lines[lineIndex];
+                const float lineCross = lineCrossSizes[lineIndex];
+                for (const std::size_t index : indices) {
+                    auto& child = children[index];
+                    AlignSelf align = AlignSelf::Auto;
+                    if (child.element != nullptr) {
+                        align = child.element->computedStyle().alignSelf;
+                    }
+                    align = effectiveAlign(align, style.alignItems);
+                    if (align == AlignSelf::Stretch && child.autoCross) {
+                        relayoutCrossRow(child, lineCross);
+                    }
+                }
+
+                float used = 0.0F;
+                for (const std::size_t index : indices) {
+                    used += children[index].marginMainStart + children[index].mainSize +
+                            children[index].marginMainEnd;
+                }
+                if (indices.size() > 1) {
+                    used += mainGap * static_cast<float>(indices.size() - 1);
+                }
+                const float freeMain = std::max(0.0F, mainAvailable - used);
+                float mainOffset = 0.0F;
+                float justifyGap = mainGap;
+                switch (style.justifyContent) {
+                case JustifyContent::Start:
+                    break;
+                case JustifyContent::Center:
+                    mainOffset = freeMain * 0.5F;
+                    break;
+                case JustifyContent::End:
+                    mainOffset = freeMain;
+                    break;
+                case JustifyContent::SpaceBetween:
+                    if (indices.size() > 1) {
+                        justifyGap += freeMain / static_cast<float>(indices.size() - 1);
+                    }
+                    break;
+                case JustifyContent::SpaceAround:
+                    if (!indices.empty()) {
+                        const float slice = freeMain / static_cast<float>(indices.size());
+                        mainOffset = slice * 0.5F;
+                        justifyGap += slice;
+                    }
+                    break;
+                }
+
+                float x = mainOffset;
+                for (const std::size_t index : indices) {
+                    auto& child = children[index];
+                    AlignSelf align = AlignSelf::Auto;
+                    if (child.element != nullptr) {
+                        align = child.element->computedStyle().alignSelf;
+                    }
+                    align = effectiveAlign(align, style.alignItems);
+                    const float outerCross =
+                        child.marginCrossStart + child.crossSize + child.marginCrossEnd;
+                    float crossPosition = child.marginCrossStart;
+                    if (align == AlignSelf::Center) {
+                        crossPosition += (lineCross - outerCross) * 0.5F;
+                    } else if (align == AlignSelf::End) {
+                        crossPosition += lineCross - outerCross;
+                    }
+
+                    const float originX = box->border.left + box->padding.left;
+                    const float originY = box->border.top + box->padding.top;
+                    const float targetX = originX + x + child.marginMainStart;
+                    const float targetY = originY + lineTop + crossPosition;
+                    child.box->borderBox.translate(targetX, targetY);
+                    child.box->paddingBox.translate(targetX, targetY);
+                    child.box->contentBox.translate(targetX, targetY);
+                    translateChildren(child.box, targetX, targetY);
+                    x += child.mainSize + child.marginMainEnd + justifyGap;
+                }
+                lineTop += lineCross + crossGap + extraCrossGap;
+            }
+
+            if (fixedHeight >= 0.0F) {
+                return std::max(0.0F, fixedHeight - box->padding.vertical() -
+                                          box->border.vertical());
+            }
+            return std::max(0.0F, lineTop - crossGap);
+        }
 
         float used = 0.0F;
         for (const auto& child : children) {
@@ -504,6 +1002,40 @@ private:
         }
         if (!children.empty()) {
             used += mainGap * static_cast<float>(children.size() - 1);
+        }
+
+        if (mainAvailable > 0.0F) {
+            float totalGrow = 0.0F;
+            float totalShrinkWeight = 0.0F;
+            for (const auto& child : children) {
+                totalGrow += child.grow;
+                totalShrinkWeight += child.shrink * child.mainSize;
+            }
+            const float freeMain = mainAvailable - used;
+            if (freeMain > 0.0F && totalGrow > 0.0F) {
+                for (auto& child : children) {
+                    if (child.grow <= 0.0F) {
+                        continue;
+                    }
+                    relayoutMain(child, child.mainSize + freeMain * (child.grow / totalGrow));
+                }
+            } else if (freeMain < 0.0F && totalShrinkWeight > 0.0F) {
+                for (auto& child : children) {
+                    if (child.shrink <= 0.0F || child.mainSize <= 0.0F) {
+                        continue;
+                    }
+                    const float scaled = child.shrink * child.mainSize;
+                    relayoutMain(child, child.mainSize + freeMain * (scaled / totalShrinkWeight));
+                }
+            }
+
+            used = 0.0F;
+            for (const auto& child : children) {
+                used += child.marginMainStart + child.mainSize + child.marginMainEnd;
+            }
+            if (!children.empty()) {
+                used += mainGap * static_cast<float>(children.size() - 1);
+            }
         }
 
         const float free = std::max(0.0F, mainAvailable - used);
@@ -554,9 +1086,15 @@ private:
             crossAvailable = contentWidth;
         }
 
-        if (row && style.alignItems == AlignItems::Stretch && fixedHeight >= 0.0F) {
+        if (row && fixedHeight >= 0.0F) {
             for (auto& child : children) {
-                if (!child.autoCross || child.box == nullptr || !child.box->isElementBox()) {
+                AlignSelf align = AlignSelf::Auto;
+                if (child.element != nullptr) {
+                    align = child.element->computedStyle().alignSelf;
+                }
+                align = effectiveAlign(align, style.alignItems);
+                if (align != AlignSelf::Stretch || !child.autoCross || child.box == nullptr ||
+                    !child.box->isElementBox()) {
                     continue;
                 }
                 auto& childElement = const_cast<Element&>(*child.box->element);
@@ -588,12 +1126,15 @@ private:
             float crossPosition = child.marginCrossStart;
             float crossFree = crossAvailable - child.marginCrossStart - child.crossSize -
                               child.marginCrossEnd;
-            if (style.alignItems == AlignItems::Center) {
+            AlignSelf align = AlignSelf::Auto;
+            if (child.element != nullptr) {
+                align = child.element->computedStyle().alignSelf;
+            }
+            align = effectiveAlign(align, style.alignItems);
+            if (align == AlignSelf::Center) {
                 crossPosition += crossFree * 0.5F;
-            } else if (style.alignItems == AlignItems::End) {
+            } else if (align == AlignSelf::End) {
                 crossPosition += crossFree;
-            } else if (style.alignItems == AlignItems::Stretch) {
-                crossPosition += 0.0F;
             }
 
             const float originX = box->border.left + box->padding.left;

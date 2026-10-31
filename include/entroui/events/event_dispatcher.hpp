@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -12,10 +13,16 @@ namespace EntroUI {
 class Document;
 class Element;
 class LayoutTree;
+class TextMeasurer;
 
 class EventDispatcher {
 public:
-    EventDispatcher(Document& document, LayoutTree& layout);
+    using ClipboardGet = std::function<std::string()>;
+    using ClipboardSet = std::function<void(std::string)>;
+
+    EventDispatcher(Document& document, LayoutTree& layout,
+                    TextMeasurer* textMeasurer = nullptr);
+    void setClipboard(ClipboardGet getter, ClipboardSet setter);
 
     [[nodiscard]] Element* hitTest(float x, float y) const;
     [[nodiscard]] Element* hovered() const noexcept { return hovered_; }
@@ -47,9 +54,16 @@ private:
     void applyDefaultAction(Event& event);
     [[nodiscard]] Element* scrollableAncestor(Element* element) const;
     [[nodiscard]] bool isFocusable(const Element& element) const;
+    [[nodiscard]] int caretAt(Element& element, float x) const;
+    void eraseSelection(Element& element);
+    void dispatchChange(Element& element);
 
     Document& document_;
     LayoutTree& layout_;
+    TextMeasurer* textMeasurer_ = nullptr;
+    ClipboardGet clipboardGet_;
+    ClipboardSet clipboardSet_;
+    int selectionAnchor_ = 0;
     Element* hovered_ = nullptr;
     Element* pressed_ = nullptr;
     Element* focused_ = nullptr;

@@ -71,7 +71,7 @@ label {
 }
 )CSS";
 
-constexpr std::array<const char*, 33> kPropertyOrder = {
+constexpr std::array<const char*, 42> kPropertyOrder = {
     "font-size",       "font-weight",    "font-family",     "line-height",
     "color",           "background",     "background-color", "border-color",
     "border",          "border-width",   "border-radius",   "text-align",
@@ -79,8 +79,10 @@ constexpr std::array<const char*, 33> kPropertyOrder = {
     "max-width",       "max-height",     "margin",          "margin-top",
     "margin-right",    "margin-bottom",  "margin-left",     "padding",
     "padding-top",     "padding-right",  "padding-bottom",  "padding-left",
-    "display",         "flex-direction", "justify-content", "align-items",
-    "gap",
+    "display",         "flex",           "flex-grow",       "flex-shrink",
+    "flex-basis",      "flex-direction", "flex-wrap",       "justify-content",
+    "align-items",     "align-self",     "align-content",   "gap",
+    "row-gap",         "column-gap",
 };
 
 void computeElementStyle(Element& element, const StyleProperties* parentStyle,

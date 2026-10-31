@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "entroui/core/element.hpp"
 #include "entroui/layout/layout_engine.hpp"
 #include "entroui/layout/layout_node.hpp"
+#include "entroui/layout/text_measurer.hpp"
 
 namespace EntroUI {
 
@@ -48,8 +50,14 @@ bool pathContains(const std::vector<Element*>& path, const Element* element) {
 
 } // namespace
 
-EventDispatcher::EventDispatcher(Document& document, LayoutTree& layout)
-    : document_(document), layout_(layout) {}
+EventDispatcher::EventDispatcher(Document& document, LayoutTree& layout,
+                                 TextMeasurer* textMeasurer)
+    : document_(document), layout_(layout), textMeasurer_(textMeasurer) {}
+
+void EventDispatcher::setClipboard(ClipboardGet getter, ClipboardSet setter) {
+    clipboardGet_ = std::move(getter);
+    clipboardSet_ = std::move(setter);
+}
 
 Element* EventDispatcher::hitTest(float x, float y) const {
     const auto* box = layout_.hitTest(x, y);
@@ -73,6 +81,7 @@ void EventDispatcher::setFocus(Element* element) {
         focused_->setFocused(true);
         if (focused_->isTextInput()) {
             focused_->setCaret(static_cast<int>(focused_->value().size()));
+            selectionAnchor_ = focused_->caret();
         }
         FocusEvent focus(EventType::Focus);
         focus.target = focused_;
@@ -133,6 +142,62 @@ bool EventDispatcher::isFocusable(const Element& element) const {
     return element.focusable() || element.tag() == "input" || element.tag() == "button";
 }
 
+int EventDispatcher::caretAt(Element& element, float x) const {
+    const std::string& value = element.value();
+    if (value.empty()) {
+        return 0;
+    }
+    const LayoutBox* box = layout_.find(&element);
+    float originX = 0.0F;
+    if (box != nullptr) {
+        originX = box->contentBox.x;
+    }
+    const auto& style = element.computedStyle();
+    const FontSpec font{style.fontFamily, style.fontSize, style.fontWeight};
+    const float target = x - originX;
+    const float fallbackCharWidth = style.fontSize * 0.5F;
+
+    int bestIndex = 0;
+    float bestDistance = std::numeric_limits<float>::max();
+    std::size_t position = 0;
+    while (true) {
+        const std::string prefix = value.substr(0, position);
+        const float width =
+            textMeasurer_ != nullptr
+                ? textMeasurer_->measure(prefix, font).width
+                : static_cast<float>(prefix.size()) * fallbackCharWidth;
+        const float distance = std::fabs(width - target);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = static_cast<int>(position);
+        }
+        if (position >= value.size()) {
+            break;
+        }
+        position = nextUtf8(value, position);
+    }
+    return bestIndex;
+}
+
+void EventDispatcher::eraseSelection(Element& element) {
+    if (!element.hasSelection()) {
+        return;
+    }
+    const int start = std::min(element.selectionStart(), element.selectionEnd());
+    const int end = std::max(element.selectionStart(), element.selectionEnd());
+    std::string value = element.value();
+    value.erase(static_cast<std::size_t>(start), static_cast<std::size_t>(end - start));
+    element.setValue(std::move(value));
+    element.setCaret(start);
+    element.clearSelection();
+}
+
+void EventDispatcher::dispatchChange(Element& element) {
+    Event change(EventType::Change);
+    change.target = &element;
+    element.dispatchEvent(change);
+}
+
 void EventDispatcher::updateHover(Element* target) {
     std::vector<Element*> newPath = target != nullptr ? pathToRoot(target) : std::vector<Element*>{};
 
@@ -180,6 +245,16 @@ void EventDispatcher::handleMouseMove(float x, float y) {
         MouseEvent event(EventType::MouseMove, x, y);
         target->dispatchEvent(event);
     }
+    if (pressed_ != nullptr && pressed_->isTextInput() && pressed_->focused()) {
+        const int caret = caretAt(*pressed_, x);
+        if (caret != selectionAnchor_) {
+            pressed_->setSelection(selectionAnchor_, caret);
+        } else {
+            pressed_->clearSelection();
+        }
+        pressed_->setCaret(caret);
+        document_.invalidatePaint();
+    }
 }
 
 void EventDispatcher::handleMouseDown(float x, float y, int button) {
@@ -203,6 +278,13 @@ void EventDispatcher::handleMouseDown(float x, float y, int button) {
     }
     if (focusTarget != nullptr) {
         setFocus(focusTarget);
+        if (focusTarget->isTextInput()) {
+            const int caret = caretAt(*focusTarget, x);
+            focusTarget->clearSelection();
+            focusTarget->setCaret(caret);
+            selectionAnchor_ = caret;
+            document_.invalidatePaint();
+        }
     }
 }
 
@@ -320,7 +402,7 @@ void EventDispatcher::handleKeyDown(int key, int scancode, int mods, bool repeat
     }
 
     if (key == Keys::Tab) {
-        focusNext((mods & 1) != 0);
+        focusNext((mods & Mods::Shift) != 0);
         return;
     }
     if (key == Keys::Escape) {
@@ -333,11 +415,65 @@ void EventDispatcher::handleKeyDown(int key, int scancode, int mods, bool repeat
     }
 
     if (focused_->isTextInput()) {
+        const bool shift = (mods & Mods::Shift) != 0;
+        const bool ctrl = (mods & Mods::Ctrl) != 0;
+
+        if (ctrl) {
+            if (key == 'a' || key == 'A') {
+                focused_->setSelection(0, static_cast<int>(focused_->value().size()));
+                focused_->setCaret(static_cast<int>(focused_->value().size()));
+                selectionAnchor_ = 0;
+                document_.invalidatePaint();
+                return;
+            }
+            if (key == 'c' || key == 'C') {
+                if (clipboardSet_ && focused_->hasSelection()) {
+                    clipboardSet_(focused_->selectedText());
+                }
+                return;
+            }
+            if (key == 'x' || key == 'X') {
+                if (focused_->hasSelection()) {
+                    if (clipboardSet_) {
+                        clipboardSet_(focused_->selectedText());
+                    }
+                    eraseSelection(*focused_);
+                    dispatchChange(*focused_);
+                    document_.invalidatePaint();
+                }
+                return;
+            }
+            if (key == 'v' || key == 'V') {
+                if (clipboardGet_) {
+                    const std::string pasted = clipboardGet_();
+                    if (!pasted.empty()) {
+                        eraseSelection(*focused_);
+                        std::string value = focused_->value();
+                        const int caret =
+                            std::clamp(focused_->caret(), 0, static_cast<int>(value.size()));
+                        value.insert(static_cast<std::size_t>(caret), pasted);
+                        focused_->setValue(std::move(value));
+                        focused_->setCaret(caret + static_cast<int>(pasted.size()));
+                        focused_->clearSelection();
+                        dispatchChange(*focused_);
+                        document_.invalidatePaint();
+                    }
+                }
+                return;
+            }
+        }
+
         std::string text = focused_->value();
         std::size_t caret = static_cast<std::size_t>(std::clamp(
             focused_->caret(), 0, static_cast<int>(text.size())));
         bool changed = false;
-        if (key == Keys::Backspace && caret > 0) {
+
+        if ((key == Keys::Backspace || key == Keys::Delete) && focused_->hasSelection()) {
+            eraseSelection(*focused_);
+            text = focused_->value();
+            caret = static_cast<std::size_t>(focused_->caret());
+            changed = true;
+        } else if (key == Keys::Backspace && caret > 0) {
             const std::size_t previous = previousUtf8(text, caret);
             text.erase(previous, caret - previous);
             caret = previous;
@@ -346,20 +482,33 @@ void EventDispatcher::handleKeyDown(int key, int scancode, int mods, bool repeat
             const std::size_t next = nextUtf8(text, caret);
             text.erase(caret, next - caret);
             changed = true;
-        } else if (key == Keys::Left) {
-            caret = previousUtf8(text, caret);
-        } else if (key == Keys::Right) {
-            caret = nextUtf8(text, caret);
-        } else if (key == Keys::Home) {
-            caret = 0;
-        } else if (key == Keys::End) {
-            caret = text.size();
+        } else if (key == Keys::Left || key == Keys::Right || key == Keys::Home ||
+                   key == Keys::End) {
+            const std::size_t previousCaret = caret;
+            if (key == Keys::Left) {
+                caret = previousUtf8(text, caret);
+            } else if (key == Keys::Right) {
+                caret = nextUtf8(text, caret);
+            } else if (key == Keys::Home) {
+                caret = 0;
+            } else {
+                caret = text.size();
+            }
+            if (shift) {
+                if (!focused_->hasSelection()) {
+                    selectionAnchor_ = static_cast<int>(previousCaret);
+                }
+                focused_->setSelection(selectionAnchor_, static_cast<int>(caret));
+            } else {
+                focused_->clearSelection();
+            }
         }
+
         if (changed) {
             focused_->setValue(std::move(text));
-            Event change(EventType::Change);
-            change.target = focused_;
-            focused_->dispatchEvent(change);
+            focused_->setCaret(static_cast<int>(caret));
+            focused_->clearSelection();
+            dispatchChange(*focused_);
         }
         focused_->setCaret(static_cast<int>(caret));
         document_.invalidatePaint();
@@ -390,15 +539,16 @@ void EventDispatcher::handleTextInput(std::string_view text) {
         return;
     }
 
+    if (focused_->hasSelection()) {
+        eraseSelection(*focused_);
+    }
     std::string value = focused_->value();
     const int caret = std::clamp(focused_->caret(), 0, static_cast<int>(value.size()));
     value.insert(static_cast<std::size_t>(caret), std::string(text));
     focused_->setValue(std::move(value));
     focused_->setCaret(caret + static_cast<int>(text.size()));
-
-    Event change(EventType::Change);
-    change.target = focused_;
-    focused_->dispatchEvent(change);
+    focused_->clearSelection();
+    dispatchChange(*focused_);
 }
 
 void EventDispatcher::focusNext(bool reverse) {

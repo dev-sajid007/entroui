@@ -87,8 +87,9 @@ presenting a frame when nothing is dirty.
 2. Resolve box edges (margin, border, padding).
 3. Resolve widths and heights from pixels, percentages, auto sizing and
    min/max constraints.
-4. Lay out children using block or flex rules.
-5. Lay out text nodes into wrapped lines using an injected `TextMeasurer`.
+4. Lay out children using block, inline line-box or flex rules.
+5. Lay out text runs and inline elements into wrapped line boxes using an
+   injected `TextMeasurer`.
 6. Produce absolute border, padding and content rectangles.
 7. Apply scroll offsets and clipping for scrollable containers.
 
@@ -114,7 +115,9 @@ Registered callbacks; default actions (click, checkbox, focus, text editing)
 ```
 
 Hover, active and focus states are represented as `hover`, `active` and `focus`
-classes so they participate in the normal stylesheet cascade.
+classes so they participate in the normal stylesheet cascade. Text inputs support
+caret placement, selection, and clipboard shortcuts delegated through callbacks
+so the event layer stays platform-independent.
 
 ## Rendering pipeline
 

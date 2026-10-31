@@ -56,6 +56,25 @@ void addElementCommands(RenderCommandList& commands, const LayoutBox& box,
         const float lineHeight = style.resolvedLineHeight();
         const float y = box.contentBox.y +
                         std::max(0.0F, (box.contentBox.height - lineHeight) * 0.5F);
+        if (element.hasSelection()) {
+            const int selectionStart =
+                std::min(element.selectionStart(), element.selectionEnd());
+            const int selectionEnd =
+                std::max(element.selectionStart(), element.selectionEnd());
+            const float charWidth = font.size * 0.5F;
+            const float selectionX =
+                box.contentBox.x + static_cast<float>(selectionStart) * charWidth;
+            const float selectionWidth = std::min(
+                static_cast<float>(selectionEnd - selectionStart) * charWidth,
+                std::max(0.0F, box.contentBox.right() - selectionX));
+            if (selectionWidth > 0.0F) {
+                commands.add(RectCommand{
+                    Rect{selectionX, y, selectionWidth, lineHeight},
+                    Color{191, 219, 254, 255},
+                    0.0F,
+                });
+            }
+        }
         if (!text.empty()) {
             commands.add(TextCommand{Rect{box.contentBox.x, y, box.contentBox.width, lineHeight},
                                      text, font, placeholder ? placeholderColor() : style.color,

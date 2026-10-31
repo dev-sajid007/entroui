@@ -88,26 +88,49 @@ std::string decodeEntities(std::string_view text) {
 }
 
 std::string normalizeText(std::string_view text) {
+    const auto isSpace = [](char character) {
+        return character == ' ' || character == '\t' || character == '\n' ||
+               character == '\r';
+    };
+    std::size_t firstContent = 0;
+    while (firstContent < text.size() && isSpace(text[firstContent])) {
+        ++firstContent;
+    }
+    std::size_t lastContent = text.size();
+    while (lastContent > firstContent && isSpace(text[lastContent - 1])) {
+        --lastContent;
+    }
+    if (firstContent == lastContent) {
+        return {};
+    }
+
     std::string result;
-    result.reserve(text.size());
+    result.reserve(lastContent - firstContent + 2);
+    if (firstContent > 0) {
+        result.push_back(' ');
+    }
     bool lastWasSpace = false;
-    for (char character : text) {
-        const bool isSpace =
-            character == ' ' || character == '\t' || character == '\n' || character == '\r';
-        if (isSpace) {
-            if (!result.empty() && !lastWasSpace) {
+    for (std::size_t index = firstContent; index < lastContent; ++index) {
+        const char character = text[index];
+        if (isSpace(character)) {
+            if (!lastWasSpace) {
                 result.push_back(' ');
+                lastWasSpace = true;
             }
-            lastWasSpace = true;
         } else {
             result.push_back(character);
             lastWasSpace = false;
         }
     }
-    while (!result.empty() && result.back() == ' ') {
-        result.pop_back();
+    if (lastContent < text.size()) {
+        result.push_back(' ');
     }
     return result;
+}
+
+bool isInlineTag(std::string_view tag) {
+    return tag == "span" || tag == "label" || tag == "button" || tag == "input" ||
+           tag == "image";
 }
 
 std::optional<int> parsePositiveInt(std::string_view value) {
@@ -142,10 +165,23 @@ std::unique_ptr<Element> buildNode(const AstNode& ast, std::size_t depth, BuildR
         return element;
     }
 
-    for (const auto& child : ast.children) {
+    for (std::size_t index = 0; index < ast.children.size(); ++index) {
+        const auto& child = ast.children[index];
         if (child->kind == AstNode::Kind::Text) {
             const std::string text = normalizeText(decodeEntities(child->text));
             if (text.empty()) {
+                bool previousInline = false;
+                bool nextInline = false;
+                if (index > 0 && ast.children[index - 1]->kind == AstNode::Kind::Element) {
+                    previousInline = isInlineTag(lowerCopy(ast.children[index - 1]->name));
+                }
+                if (index + 1 < ast.children.size() &&
+                    ast.children[index + 1]->kind == AstNode::Kind::Element) {
+                    nextInline = isInlineTag(lowerCopy(ast.children[index + 1]->name));
+                }
+                if (previousInline && nextInline) {
+                    element->child(std::make_unique<TextNode>(" "));
+                }
                 continue;
             }
             element->child(std::make_unique<TextNode>(std::move(text)));

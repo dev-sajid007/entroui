@@ -79,6 +79,13 @@ struct FocusEvent : Event {
     explicit FocusEvent(EventType eventType) : Event(eventType) {}
 };
 
+namespace Mods {
+inline constexpr int Shift = 1 << 0;
+inline constexpr int Ctrl = 1 << 1;
+inline constexpr int Alt = 1 << 2;
+inline constexpr int Super = 1 << 3;
+} // namespace Mods
+
 namespace Keys {
 inline constexpr int Backspace = 8;
 inline constexpr int Tab = 9;

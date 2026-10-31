@@ -1,6 +1,17 @@
 # Roadmap
 
-The EntroUI 1.0.0 implementation covers the following milestones.
+The EntroUI 1.1.0 implementation covers the following milestones.
+
+## Version 1.1.0 - Layout and text fidelity
+
+- [x] Inline formatting context: text runs, `span`, and inline-block elements on
+      shared wrapped lines.
+- [x] Inline whitespace preservation and line-level text alignment.
+- [x] Flex grow, shrink, basis, row wrapping, align-self, align-content,
+      row-gap and column-gap.
+- [x] Text input caret placement by click, selection, clipboard copy/cut/paste
+      and keyboard selection shortcuts.
+- [x] Additional layout, event and integration tests.
 
 ## Phase 1 - Core foundation
 
@@ -46,14 +57,14 @@ The EntroUI 1.0.0 implementation covers the following milestones.
 - [x] Milestone 16: Unit and integration tests, examples, Linux build,
       installation support, versioning, release documentation.
 
-## Known limitations in 1.0.0
+## Known limitations in 1.1.0
 
-- Single-line flex layout; no flex wrap/grow/shrink.
+- Flex wrapping is implemented for row direction; column wrapping is not.
 - No pseudo-class selectors other than the built-in `hover`/`active`/`focus`
   classes.
 - No advanced CSS selectors, animations or transitions.
-- Text styling is limited to SDL_ttf capabilities (no rich text spans in one
-  paragraph).
+- Text styling is limited to SDL_ttf capabilities (no per-run rich text beyond
+  inline element styles).
 - Markup cannot attach event handlers directly; use the C++ API after loading,
   or use the DSL for interactive markup.
 - UI operations and rendering run on the main thread. There is no cross-thread

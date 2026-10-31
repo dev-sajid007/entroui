@@ -73,6 +73,8 @@ Element::Element(Element&& other) noexcept : Node(NodeType::Element) {
     hasComputedStyle_ = other.hasComputedStyle_;
     value_ = std::move(other.value_);
     caret_ = other.caret_;
+    selectionStart_ = other.selectionStart_;
+    selectionEnd_ = other.selectionEnd_;
     checked_ = other.checked_;
     focusable_ = other.focusable_;
     focused_ = other.focused_;
@@ -120,6 +122,8 @@ Element& Element::operator=(Element&& other) noexcept {
     hasComputedStyle_ = other.hasComputedStyle_;
     value_ = std::move(other.value_);
     caret_ = other.caret_;
+    selectionStart_ = other.selectionStart_;
+    selectionEnd_ = other.selectionEnd_;
     checked_ = other.checked_;
     focusable_ = other.focusable_;
     focused_ = other.focused_;
@@ -514,7 +518,32 @@ void Element::setValue(std::string value) {
     if (caret_ > static_cast<int>(value_.size())) {
         caret_ = static_cast<int>(value_.size());
     }
+    if (selectionStart_ > static_cast<int>(value_.size())) {
+        selectionStart_ = static_cast<int>(value_.size());
+    }
+    if (selectionEnd_ > static_cast<int>(value_.size())) {
+        selectionEnd_ = static_cast<int>(value_.size());
+    }
     markLayoutDirty();
+}
+
+void Element::setSelection(int start, int end) noexcept {
+    const int size = static_cast<int>(value_.size());
+    selectionStart_ = std::clamp(start, 0, size);
+    selectionEnd_ = std::clamp(end, 0, size);
+}
+
+std::string Element::selectedText() const {
+    if (!hasSelection()) {
+        return {};
+    }
+    const int start = std::min(selectionStart_, selectionEnd_);
+    const int end = std::max(selectionStart_, selectionEnd_);
+    if (start < 0 || end > static_cast<int>(value_.size())) {
+        return {};
+    }
+    return value_.substr(static_cast<std::size_t>(start),
+                         static_cast<std::size_t>(end - start));
 }
 
 void Element::setChecked(bool checked) {
@@ -573,6 +602,8 @@ std::unique_ptr<Element> Element::cloneElement() const {
     copy->hasComputedStyle_ = hasComputedStyle_;
     copy->value_ = value_;
     copy->caret_ = caret_;
+    copy->selectionStart_ = selectionStart_;
+    copy->selectionEnd_ = selectionEnd_;
     copy->checked_ = checked_;
     copy->focusable_ = focusable_;
     copy->scrollable_ = scrollable_;

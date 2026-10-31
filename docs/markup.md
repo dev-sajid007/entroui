@@ -59,10 +59,17 @@ All tags also support self-closing syntax.
 
 ## Text and whitespace
 
-Text content is trimmed and whitespace runs are collapsed to a single space.
-Whitespace-only nodes are discarded. This means indentation used for readability
-does not become visible content. Whitespace between adjacent inline elements is
-not preserved in this release.
+Whitespace runs are collapsed to a single space. Indentation used for
+readability between block elements is discarded, while single spaces between
+adjacent inline elements and around inline content are preserved:
+
+```html
+<p>EntroUI parses <span class="accent">nested markup</span>, comments.</p>
+<span>A</span> <span>B</span>
+```
+
+The first paragraph flows as one inline line. The two spans are separated by one
+space.
 
 ## Comments
 

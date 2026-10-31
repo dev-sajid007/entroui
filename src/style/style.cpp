@@ -187,7 +187,9 @@ bool parseDisplay(std::string_view value, Display& display) {
         display = Display::Flex;
     } else if (lower == "none") {
         display = Display::None;
-    } else if (lower == "inline-block" || lower == "inline") {
+    } else if (lower == "inline") {
+        display = Display::Inline;
+    } else if (lower == "inline-block") {
         display = Display::InlineBlock;
     } else {
         return false;
@@ -235,6 +237,56 @@ bool parseAlign(std::string_view value, AlignItems& align) {
         align = AlignItems::End;
     } else if (lower == "stretch") {
         align = AlignItems::Stretch;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool parseAlignSelf(std::string_view value, AlignSelf& align) {
+    const std::string lower = lowerCopy(trimCopy(value));
+    if (lower == "auto") {
+        align = AlignSelf::Auto;
+    } else if (lower == "flex-start" || lower == "start") {
+        align = AlignSelf::Start;
+    } else if (lower == "center") {
+        align = AlignSelf::Center;
+    } else if (lower == "flex-end" || lower == "end") {
+        align = AlignSelf::End;
+    } else if (lower == "stretch") {
+        align = AlignSelf::Stretch;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool parseAlignContent(std::string_view value, AlignContent& align) {
+    const std::string lower = lowerCopy(trimCopy(value));
+    if (lower == "flex-start" || lower == "start") {
+        align = AlignContent::Start;
+    } else if (lower == "center") {
+        align = AlignContent::Center;
+    } else if (lower == "flex-end" || lower == "end") {
+        align = AlignContent::End;
+    } else if (lower == "space-between") {
+        align = AlignContent::SpaceBetween;
+    } else if (lower == "space-around") {
+        align = AlignContent::SpaceAround;
+    } else if (lower == "stretch") {
+        align = AlignContent::Stretch;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool parseFlexWrap(std::string_view value, FlexWrap& wrap) {
+    const std::string lower = lowerCopy(trimCopy(value));
+    if (lower == "nowrap" || lower == "no-wrap") {
+        wrap = FlexWrap::NoWrap;
+    } else if (lower == "wrap") {
+        wrap = FlexWrap::Wrap;
     } else {
         return false;
     }
@@ -405,8 +457,9 @@ Length Length::parse(std::string_view text) {
 
 void applyDefaultStyle(StyleProperties& properties, std::string_view tag) {
     properties.display = Display::Block;
-    if (tag == "span" || tag == "button" || tag == "input" || tag == "label" ||
-        tag == "image") {
+    if (tag == "span") {
+        properties.display = Display::Inline;
+    } else if (tag == "button" || tag == "input" || tag == "label" || tag == "image") {
         properties.display = Display::InlineBlock;
     }
     if (tag == "h1") {
@@ -573,6 +626,79 @@ bool applyStyleDeclaration(StyleProperties& properties, std::string_view propert
                                     : *number * properties.fontSize;
         return true;
     }
+    if (name == "flex") {
+        const auto tokens = splitWhitespace(rawValue);
+        if (tokens.empty() || tokens.size() > 3) {
+            return false;
+        }
+        if (tokens.size() == 1) {
+            if (lowerCopy(tokens[0]) == "none") {
+                properties.flexGrow = 0.0F;
+                properties.flexShrink = 0.0F;
+                properties.flexBasis = Length{};
+                return true;
+            }
+            const auto grow = parseFloat(tokens[0]);
+            if (!grow) {
+                return false;
+            }
+            properties.flexGrow = std::max(0.0F, *grow);
+            properties.flexShrink = 1.0F;
+            properties.flexBasis = Length{0.0F, LengthUnit::Px};
+            return true;
+        }
+        const auto grow = parseFloat(tokens[0]);
+        const auto shrink = parseFloat(tokens[1]);
+        const auto basis = Length::tryParse(tokens[2]);
+        if (!grow || !shrink || !basis) {
+            return false;
+        }
+        properties.flexGrow = std::max(0.0F, *grow);
+        properties.flexShrink = std::max(0.0F, *shrink);
+        properties.flexBasis = *basis;
+        return true;
+    }
+    if (name == "flex-grow" || name == "flex-shrink") {
+        const auto number = parseFloat(rawValue);
+        if (!number || *number < 0.0F) {
+            return false;
+        }
+        if (name == "flex-grow") {
+            properties.flexGrow = *number;
+        } else {
+            properties.flexShrink = *number;
+        }
+        return true;
+    }
+    if (name == "flex-basis") {
+        const auto length = parseLengthValue(rawValue);
+        if (!length) {
+            return false;
+        }
+        properties.flexBasis = *length;
+        return true;
+    }
+    if (name == "flex-wrap") {
+        return parseFlexWrap(rawValue, properties.flexWrap);
+    }
+    if (name == "align-self") {
+        return parseAlignSelf(rawValue, properties.alignSelf);
+    }
+    if (name == "align-content") {
+        return parseAlignContent(rawValue, properties.alignContent);
+    }
+    if (name == "row-gap" || name == "column-gap") {
+        const auto number = parseFloat(rawValue);
+        if (!number || *number < 0.0F) {
+            return false;
+        }
+        if (name == "row-gap") {
+            properties.rowGap = *number;
+        } else {
+            properties.columnGap = *number;
+        }
+        return true;
+    }
     if (name == "display") {
         return parseDisplay(rawValue, properties.display);
     }
@@ -615,7 +741,7 @@ bool applyInlineStyle(StyleProperties& properties, std::string_view declarations
 
 bool isValidStyleProperty(std::string_view property) {
     const std::string name = lowerCopy(trimCopy(property));
-    static const std::array<const char*, 33> properties = {
+    static const std::array<const char*, 42> properties = {
         "width",           "height",         "min-width",       "min-height",
         "max-width",       "max-height",     "margin",          "margin-top",
         "margin-right",    "margin-bottom",  "margin-left",     "padding",
@@ -623,8 +749,10 @@ bool isValidStyleProperty(std::string_view property) {
         "color",           "background",     "background-color", "border-color",
         "border",          "border-width",   "border-radius",   "font-size",
         "font-weight",     "font-family",    "text-align",      "line-height",
-        "display",         "flex-direction", "justify-content", "align-items",
-        "gap",
+        "display",         "flex",           "flex-grow",       "flex-shrink",
+        "flex-basis",      "flex-direction", "flex-wrap",       "justify-content",
+        "align-items",     "align-self",     "align-content",   "gap",
+        "row-gap",         "column-gap",
     };
     return std::find_if(properties.begin(), properties.end(), [&name](const char* candidate) {
                return name == candidate;
