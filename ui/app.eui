@@ -1,0 +1,9 @@
+<app>
+    <window title="EntroUI Demo" width="900" height="600">
+        <div class="container">
+            <h1>EntroUI Demo</h1>
+            <p>Edit ui/app.eui and ui/styles.css to build your application.</p>
+            <button id="hello">Hello</button>
+        </div>
+    </window>
+</app>

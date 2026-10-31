@@ -1,0 +1,34 @@
+<app>
+    <window title="EntroUI Basic Elements" width="900" height="600">
+        <div class="container">
+            <h1>Basic Elements</h1>
+            <p>Headings, paragraphs, buttons, spans, inputs and images.</p>
+
+            <div class="row">
+                <button id="primary">Primary Button</button>
+                <button id="secondary" class="secondary">Secondary Button</button>
+            </div>
+
+            <div class="card">
+                <h2>Form controls</h2>
+                <label>Your name</label>
+                <input id="name" placeholder="Type your name" />
+                <div class="row">
+                    <input id="agree" type="checkbox" />
+                    <span>I agree to the imaginary terms</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Lists and text</h2>
+                <p>EntroUI parses nested markup, comments and attributes.</p>
+                <p class="accent">Spans support class-based styling.</p>
+                <list>
+                    <p>Declarative C++ DSL</p>
+                    <p>HTML-like .eui markup</p>
+                    <p>CSS-inspired styling</p>
+                </list>
+            </div>
+        </div>
+    </window>
+</app>

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libfreetype-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxfixes-dev libxinerama-dev libxkbcommon-dev
+
+      - name: Install Python and Conan
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install conan
+          conan profile detect --force
+
+      - name: Install Conan dependencies
+        run: |
+          conan install . --build=missing \
+            -s build_type=Debug -s compiler.cppstd=20 -of build/debug
+
+      - name: Configure
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug -j "$(nproc)"
+
+      - name: Test
+        run: ctest --preset debug --output-on-failure
+
+      - name: CLI smoke test
+        run: |
+          ./build/debug/entroui version
+          ./build/debug/entroui check examples/basic-elements/ui

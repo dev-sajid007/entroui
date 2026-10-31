@@ -1,0 +1,13 @@
+function(entroui_example name source)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE entroui)
+    get_filename_component(example_dir "${CMAKE_CURRENT_SOURCE_DIR}/${source}" DIRECTORY)
+    target_compile_definitions(${name} PRIVATE ENTROUI_EXAMPLE_DIR="${example_dir}")
+endfunction()
+
+entroui_example(entroui-hello hello-world/main.cpp)
+entroui_example(entroui-basic-elements basic-elements/main.cpp)
+entroui_example(entroui-layouts layouts/main.cpp)
+entroui_example(entroui-buttons buttons/main.cpp)
+entroui_example(entroui-forms forms/main.cpp)
+entroui_example(entroui-components components/main.cpp)

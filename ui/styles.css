@@ -1,0 +1,15 @@
+.container {
+    padding: 32px;
+}
+
+h1 {
+    font-size: 36px;
+    color: #0f172a;
+    margin-bottom: 12px;
+}
+
+p {
+    color: #475569;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
